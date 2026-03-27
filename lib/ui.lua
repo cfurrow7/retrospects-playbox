@@ -258,7 +258,7 @@ function UI:draw()
   end
 
   -- Mute overlay
-  if self.k1_held and self.page ~= 4 and self.page ~= 5 then
+  if self.k1_held and self.page ~= 1 and self.page ~= 4 and self.page ~= 5 then
     self:draw_mute_overlay()
     screen.update()
     return
