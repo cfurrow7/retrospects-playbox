@@ -779,6 +779,8 @@ function UI:enc_play(n, d)
       end
       self.pc_flash = 1.0
     end
+    -- Auto-save PC to disk
+    if self.state.on_save_pc then self.state.on_save_pc() end
   end
 end
 

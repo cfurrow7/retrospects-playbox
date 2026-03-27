@@ -23,11 +23,65 @@ local state = {}
 
 local MIDI_DIR = _path.data .. "midi"
 local PLAYLIST_DIR = _path.code .. "retrospects-playbox/playlists"
+local PATCHES_FILE = _path.data .. "retrospects-playbox/patches.txt"
 
+local patches = {}  -- filename -> { pc, ob6_pc }
 local redraw_clock = nil
+
+function load_patches()
+  patches = {}
+  local f = io.open(PATCHES_FILE, "r")
+  if not f then return end
+  for line in f:lines() do
+    local name, p1, p2 = line:match("^(.-)%s*|%s*(%d+)%s*|%s*(%d+)%s*$")
+    if not name then
+      name, p1 = line:match("^(.-)%s*|%s*(%d+)%s*$")
+    end
+    if name then
+      patches[name] = { pc = tonumber(p1), ob6_pc = tonumber(p2) }
+    end
+  end
+  f:close()
+end
+
+function save_patches()
+  os.execute("mkdir -p " .. _path.data .. "retrospects-playbox")
+  local f = io.open(PATCHES_FILE, "w")
+  if not f then return end
+  for name, p in pairs(patches) do
+    local p1 = p.pc or 0
+    if p.ob6_pc then
+      f:write(name .. "|" .. p1 .. "|" .. p.ob6_pc .. "\n")
+    else
+      f:write(name .. "|" .. p1 .. "\n")
+    end
+  end
+  f:close()
+end
+
+-- Save a PC for the current song and persist to disk
+function save_song_pc(song)
+  if not song then return end
+  local name = song.file:match(".*/(.+)$") or song.file
+  patches[name] = { pc = song.pc, ob6_pc = song.ob6_pc }
+  save_patches()
+end
+
+-- Apply saved patches to a song entry
+function apply_saved_patches(song)
+  if not song then return end
+  local name = song.file:match(".*/(.+)$") or song.file
+  local p = patches[name]
+  if p then
+    if not song.pc then song.pc = p.pc end
+    if not song.ob6_pc then song.ob6_pc = p.ob6_pc end
+  end
+end
 
 function init()
   os.execute("mkdir -p " .. MIDI_DIR)
+
+  load_patches()
 
   state.kit = 1
   state.midi_dir = MIDI_DIR
@@ -40,6 +94,10 @@ function init()
 
   state.on_load_current = function()
     load_current()
+  end
+
+  state.on_save_pc = function()
+    save_song_pc(queue:current())
   end
 
   state.on_play_file = function(entry)
@@ -197,6 +255,8 @@ function load_current()
   end
 
   seq:stop()
+  -- Apply saved patches (won't overwrite playlist-specified PCs)
+  apply_saved_patches(song)
   -- Send program changes if song has them assigned
   if seq.midi_out then
     if song.pc then
