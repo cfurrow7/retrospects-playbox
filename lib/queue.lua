@@ -10,8 +10,8 @@ function Queue.new()
   return self
 end
 
-function Queue:add(name, filepath)
-  table.insert(self.songs, { name = name, file = filepath })
+function Queue:add(name, filepath, pc)
+  table.insert(self.songs, { name = name, file = filepath, pc = pc })
 end
 
 function Queue:remove(index)
@@ -82,13 +82,19 @@ function Queue:load_playlist(filepath, midi_dir)
   for line in f:lines() do
     line = line:match("^%s*(.-)%s*$")  -- trim
     if line ~= "" and not line:match("^#") then  -- skip empty and comments
-      local name = line:match("(.+)%.mid[i]?$") or line
-      local full_path = midi_dir .. "/" .. line
+      -- Parse optional program change: "filename.mid|42"
+      local filename, pc_str = line:match("^(.-)%s*|%s*(%d+)%s*$")
+      if not filename then filename = line end
+      local pc = pc_str and tonumber(pc_str) or nil
+      if pc then pc = math.max(0, math.min(127, pc)) end
+
+      local name = filename:match("(.+)%.mid[i]?$") or filename
+      local full_path = midi_dir .. "/" .. filename
       -- Add .mid if not present
-      if not line:match("%.mid[i]?$") then
+      if not filename:match("%.mid[i]?$") then
         full_path = full_path .. ".mid"
       end
-      self:add(name, full_path)
+      self:add(name, full_path, pc)
     end
   end
   f:close()
@@ -100,9 +106,13 @@ function Queue:save_playlist(filepath)
   local f = io.open(filepath, "w")
   if not f then return false end
   for _, song in ipairs(self.songs) do
-    -- Write the filename relative to midi dir
+    -- Write the filename relative to midi dir, with optional PC
     local name = song.file:match(".*/(.+)$") or song.file
-    f:write(name .. "\n")
+    if song.pc then
+      f:write(name .. "|" .. song.pc .. "\n")
+    else
+      f:write(name .. "\n")
+    end
   end
   f:close()
   return true
