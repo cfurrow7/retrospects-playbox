@@ -1,0 +1,20 @@
+#!/bin/bash
+# Wrapper script for audio2midi.py
+# Uses the local venv with all ML dependencies
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV="$SCRIPT_DIR/.venv"
+
+if [ ! -d "$VENV" ]; then
+    echo "Setting up Python environment (first run)..."
+    python3.12 -m venv "$VENV"
+    source "$VENV/bin/activate"
+    pip install --upgrade pip "setuptools<81" wheel >/dev/null
+    pip install numpy mido basic-pitch demucs onnxruntime torchcodec "scipy<1.14"
+    # Patch basic-pitch scipy compat (gaussian moved to signal.windows)
+    sed -i '' 's/scipy.signal.gaussian/scipy.signal.windows.gaussian/g' "$VENV/lib/python3.12/site-packages/basic_pitch/note_creation.py" 2>/dev/null
+else
+    source "$VENV/bin/activate"
+fi
+
+python3 "$SCRIPT_DIR/audio2midi.py" "$@"
