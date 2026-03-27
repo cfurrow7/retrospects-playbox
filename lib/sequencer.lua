@@ -34,8 +34,9 @@ function Sequencer.new()
   self.min_velocity = 0
   self.min_duration = 0
 
-  -- OB-6 mono state: track all held notes so we can send proper note-offs
-  self.ob6_active = {}  -- set of notes currently "on" at OB-6
+  -- OB-6 mono state
+  self.ob6_current = nil   -- the one note currently sounding
+  self.ob6_held = {}       -- all notes with note-on still active (for release tracking)
 
   -- Callbacks
   self.on_note = nil
@@ -109,7 +110,8 @@ function Sequencer:play()
   if self.playing then return end
 
   self.playing = true
-  self.ob6_active = {}
+  self.ob6_current = nil
+  self.ob6_held = {}
 
   self.clock_id = clock.run(function()
     local start_time = util.time()
@@ -151,7 +153,8 @@ function Sequencer:stop()
     self.clock_id = nil
   end
   self:all_notes_off()
-  self.ob6_active = {}
+  self.ob6_current = nil
+  self.ob6_held = {}
 end
 
 function Sequencer:restart()
@@ -205,8 +208,8 @@ function Sequencer:route_event(event)
   end
 end
 
--- OB-6 mono lead: only one note-on at a time (latest wins)
--- Always send note-offs so OB-6's note buffer stays clean
+-- OB-6 mono lead: strict mono, latest note wins
+-- Norns enforces one note at a time so OB-6 never stacks notes
 function Sequencer:route_mono_lead(event, track, track_idx, note)
   local ch = TrackAssign.LEAD_CH
   local scale = track.velocity_scale or 1.0
@@ -216,19 +219,25 @@ function Sequencer:route_mono_lead(event, track, track_idx, note)
     local scaled_vel = math.floor(event.velocity * scale)
     scaled_vel = math.max(1, math.min(127, scaled_vel))
 
-    -- Send note-on (OB-6 mono mode handles priority)
+    -- Kill any currently sounding note before sending the new one
+    if self.ob6_current then
+      self.midi_out:note_off(self.ob6_current, 0, ch)
+    end
+
     self.midi_out:note_on(note, scaled_vel, ch)
-    self.ob6_active[note] = true
+    self.ob6_current = note
+    self.ob6_held[note] = true  -- track all held notes for proper release
 
     if self.on_note then
       self.on_note(track_idx, note, scaled_vel)
     end
   elseif event.type == "note_off" or (event.type == "note_on" and event.velocity == 0) then
-    -- Always send note-off to clear from OB-6's note buffer
-    if self.ob6_active[note] then
+    self.ob6_held[note] = nil
+    if note == self.ob6_current then
       self.midi_out:note_off(note, 0, ch)
-      self.ob6_active[note] = nil
+      self.ob6_current = nil
     end
+    -- If other notes are still held, don't re-trigger (just let silence)
   end
 end
 
@@ -268,11 +277,12 @@ function Sequencer:all_notes_off()
       self.midi_out:note_off(note, 0, ch)
     end
     self.active_notes = {}
-    -- Clear all OB-6 mono notes
-    for note, _ in pairs(self.ob6_active) do
-      self.midi_out:note_off(note, 0, TrackAssign.LEAD_CH)
+    -- Clear OB-6 mono note
+    if self.ob6_current then
+      self.midi_out:note_off(self.ob6_current, 0, TrackAssign.LEAD_CH)
+      self.ob6_current = nil
     end
-    self.ob6_active = {}
+    self.ob6_held = {}
     -- Reset all Retrospects channels: sustain off, all notes off, all sound off
     for _, ch in ipairs({TrackAssign.BASS_CH, TrackAssign.LEAD_CH, TrackAssign.CHORD_CH}) do
       self.midi_out:cc(64, 0, ch)   -- sustain pedal off
