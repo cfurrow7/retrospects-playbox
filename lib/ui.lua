@@ -154,6 +154,7 @@ function UI:decay_flash()
     if self.drum_flash[i] > 0 then self.drum_flash[i] = self.drum_flash[i] - 1 end
   end
   if self.pc_flash and self.pc_flash > 0 then self.pc_flash = self.pc_flash - 0.15 end
+  if self.ob6_pc_flash and self.ob6_pc_flash > 0 then self.ob6_pc_flash = self.ob6_pc_flash - 0.15 end
   local target = math.min(1.0, self.note_hits * 0.15)
   if target > self.energy then
     self.energy = self.energy + (target - self.energy) * 0.6
@@ -348,17 +349,27 @@ function UI:draw_play()
   if self.seq.bpm_override then bpm_str = bpm_str .. "*" end
   screen.text(bpm_str)
 
-  -- PRO-800 PC
+  -- Program changes
   local song_pc = song and song.pc
-  if song_pc then
-    screen.level(self.pc_flash and self.pc_flash > 0 and 15 or 6)
-    screen.move(55, 28)
-    screen.text("PC:" .. song_pc)
+  local song_ob6 = song and song.ob6_pc
+  if song_pc or song_ob6 then
+    local x = 44
+    if song_pc then
+      screen.level(self.pc_flash and self.pc_flash > 0 and 15 or 6)
+      screen.move(x, 28)
+      screen.text("P8:" .. song_pc)
+      x = x + 28
+    end
+    if song_ob6 then
+      screen.level(self.ob6_pc_flash and self.ob6_pc_flash > 0 and 15 or 6)
+      screen.move(x, 28)
+      screen.text("OB:" .. song_ob6)
+    end
   end
 
   -- Play state
   screen.level(15)
-  screen.move(95, 28)
+  screen.move(105, 28)
   screen.text(self.seq.playing and "> PLAY" or "  STOP")
 
   -- Progress bar
@@ -653,17 +664,27 @@ function UI:enc_play(n, d)
     local bpm = self.seq:get_bpm() + d
     self.seq:set_bpm(bpm)
   elseif n == 3 then
-    -- Browse PRO-800 program changes on ch11
     local song = self.queue:current()
     if not song then return end
-    local cur_pc = song.pc or 0
-    local new_pc = util.clamp(cur_pc + d, 0, 127)
-    song.pc = new_pc
-    -- Send PC live so you hear the patch
-    if self.seq.midi_out then
-      self.seq.midi_out:program_change(new_pc, 11)
+    if self.k1_held then
+      -- K1+E3: Browse OB-6 program changes on ch4
+      local cur_pc = song.ob6_pc or 0
+      local new_pc = util.clamp(cur_pc + d, 0, 127)
+      song.ob6_pc = new_pc
+      if self.seq.midi_out then
+        self.seq.midi_out:program_change(new_pc, 4)
+      end
+      self.ob6_pc_flash = 1.0
+    else
+      -- E3: Browse PRO-800 program changes on ch11
+      local cur_pc = song.pc or 0
+      local new_pc = util.clamp(cur_pc + d, 0, 127)
+      song.pc = new_pc
+      if self.seq.midi_out then
+        self.seq.midi_out:program_change(new_pc, 11)
+      end
+      self.pc_flash = 1.0
     end
-    self.pc_flash = 1.0
   end
 end
 

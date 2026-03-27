@@ -10,8 +10,8 @@ function Queue.new()
   return self
 end
 
-function Queue:add(name, filepath, pc)
-  table.insert(self.songs, { name = name, file = filepath, pc = pc })
+function Queue:add(name, filepath, pc, ob6_pc)
+  table.insert(self.songs, { name = name, file = filepath, pc = pc, ob6_pc = ob6_pc })
 end
 
 function Queue:remove(index)
@@ -82,11 +82,16 @@ function Queue:load_playlist(filepath, midi_dir)
   for line in f:lines() do
     line = line:match("^%s*(.-)%s*$")  -- trim
     if line ~= "" and not line:match("^#") then  -- skip empty and comments
-      -- Parse optional program change: "filename.mid|42"
-      local filename, pc_str = line:match("^(.-)%s*|%s*(%d+)%s*$")
+      -- Parse optional program changes: "filename.mid|pro800_pc|ob6_pc"
+      local filename, pc1_str, pc2_str = line:match("^(.-)%s*|%s*(%d+)%s*|%s*(%d+)%s*$")
+      if not filename then
+        filename, pc1_str = line:match("^(.-)%s*|%s*(%d+)%s*$")
+      end
       if not filename then filename = line end
-      local pc = pc_str and tonumber(pc_str) or nil
+      local pc = pc1_str and tonumber(pc1_str) or nil
+      local ob6_pc = pc2_str and tonumber(pc2_str) or nil
       if pc then pc = math.max(0, math.min(127, pc)) end
+      if ob6_pc then ob6_pc = math.max(0, math.min(127, ob6_pc)) end
 
       local name = filename:match("(.+)%.mid[i]?$") or filename
       local full_path = midi_dir .. "/" .. filename
@@ -94,7 +99,7 @@ function Queue:load_playlist(filepath, midi_dir)
       if not filename:match("%.mid[i]?$") then
         full_path = full_path .. ".mid"
       end
-      self:add(name, full_path, pc)
+      self:add(name, full_path, pc, ob6_pc)
     end
   end
   f:close()
@@ -106,10 +111,16 @@ function Queue:save_playlist(filepath)
   local f = io.open(filepath, "w")
   if not f then return false end
   for _, song in ipairs(self.songs) do
-    -- Write the filename relative to midi dir, with optional PC
+    -- Write the filename relative to midi dir, with optional PCs
     local name = song.file:match(".*/(.+)$") or song.file
-    if song.pc then
-      f:write(name .. "|" .. song.pc .. "\n")
+    if song.pc or song.ob6_pc then
+      local p1 = song.pc or 0
+      local p2 = song.ob6_pc
+      if p2 then
+        f:write(name .. "|" .. p1 .. "|" .. p2 .. "\n")
+      else
+        f:write(name .. "|" .. p1 .. "\n")
+      end
     else
       f:write(name .. "\n")
     end

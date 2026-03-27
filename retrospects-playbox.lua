@@ -197,15 +197,21 @@ function load_current()
   end
 
   seq:stop()
-  -- Send program change to PRO-800 (ch11) if song has a PC assigned
-  if song.pc and seq.midi_out then
-    seq.midi_out:program_change(song.pc, TrackAssign.CHORD_CH)
-    print("  PRO-800 PC: " .. song.pc)
+  -- Send program changes if song has them assigned
+  if seq.midi_out then
+    if song.pc then
+      seq.midi_out:program_change(song.pc, TrackAssign.CHORD_CH)
+    end
+    if song.ob6_pc then
+      seq.midi_out:program_change(song.ob6_pc, TrackAssign.LEAD_CH)
+    end
   end
   local ok, err = seq:load(song.file)
   if ok then
     apply_locked_settings()
-    local pc_info = song.pc and (" PC:" .. song.pc) or ""
+    local pc_info = ""
+    if song.pc then pc_info = pc_info .. " P8:" .. song.pc end
+    if song.ob6_pc then pc_info = pc_info .. " OB:" .. song.ob6_pc end
     print("Loaded: " .. song.name .. " (" .. seq:get_bpm() .. " BPM, " .. seq:track_count() .. " tracks, " .. seq.assign_mode .. pc_info .. ")")
     seq:play()
   else
