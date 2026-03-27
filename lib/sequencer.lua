@@ -243,7 +243,9 @@ function Sequencer:route_poly(event, track, track_idx, note)
     scaled_vel = math.max(1, math.min(127, scaled_vel))
     for _, out_ch in ipairs(channels) do
       self.midi_out:note_on(note, scaled_vel, out_ch)
-      table.insert(self.active_notes, { out_ch, note })
+      -- Track active notes using channel*256+note key to avoid duplicates
+      local key = out_ch * 256 + note
+      self.active_notes[key] = true
     end
     if self.on_note then
       self.on_note(track_idx, note, scaled_vel)
@@ -251,12 +253,8 @@ function Sequencer:route_poly(event, track, track_idx, note)
   elseif event.type == "note_off" or (event.type == "note_on" and event.velocity == 0) then
     for _, out_ch in ipairs(channels) do
       self.midi_out:note_off(note, 0, out_ch)
-      for i = #self.active_notes, 1, -1 do
-        if self.active_notes[i][1] == out_ch and self.active_notes[i][2] == note then
-          table.remove(self.active_notes, i)
-          break
-        end
-      end
+      local key = out_ch * 256 + note
+      self.active_notes[key] = nil
     end
   end
 end
@@ -264,8 +262,10 @@ end
 function Sequencer:all_notes_off()
   if self.midi_out then
     -- Clear active poly notes
-    for _, an in ipairs(self.active_notes) do
-      self.midi_out:note_off(an[2], 0, an[1])
+    for key, _ in pairs(self.active_notes) do
+      local ch = math.floor(key / 256)
+      local note = key % 256
+      self.midi_out:note_off(note, 0, ch)
     end
     self.active_notes = {}
     -- Clear all OB-6 mono notes
@@ -273,9 +273,11 @@ function Sequencer:all_notes_off()
       self.midi_out:note_off(note, 0, TrackAssign.LEAD_CH)
     end
     self.ob6_active = {}
-    -- All notes off on all Retrospects channels
+    -- Reset all Retrospects channels: sustain off, all notes off, all sound off
     for _, ch in ipairs({TrackAssign.BASS_CH, TrackAssign.LEAD_CH, TrackAssign.CHORD_CH}) do
-      self.midi_out:cc(123, 0, ch)
+      self.midi_out:cc(64, 0, ch)   -- sustain pedal off
+      self.midi_out:cc(123, 0, ch)  -- all notes off
+      self.midi_out:cc(120, 0, ch)  -- all sound off (kills tails immediately)
     end
   end
 end

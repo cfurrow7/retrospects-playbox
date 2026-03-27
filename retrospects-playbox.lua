@@ -13,13 +13,11 @@ engine.name = "RetroBox"
 local Sequencer = include("retrospects-playbox/lib/sequencer")
 local Queue = include("retrospects-playbox/lib/queue")
 local UILib = include("retrospects-playbox/lib/ui")
-local MidiMix = include("retrospects-playbox/lib/midimix")
 local TrackAssign = include("retrospects-playbox/lib/track_assign")
 local DrumKits = include("retrospects-playbox/lib/drum_kits")
 
 local seq = Sequencer.new()
 local queue = Queue.new()
-local midimix = MidiMix.new()
 local ui
 local state = {}
 
@@ -75,11 +73,6 @@ function init()
   params:add_number("midi_out_device", "MIDI Out Device", 1, 16, 1)
   params:set_action("midi_out_device", function(val)
     seq:connect_midi(val)
-  end)
-
-  params:add_number("midimix_device", "MIDIMIX Device", 1, 16, 2)
-  params:set_action("midimix_device", function(val)
-    midimix:connect(val)
   end)
 
   params:add_option("assign_mode", "Assign Mode", {"Greedy", "Smart"}, 1)
@@ -141,9 +134,6 @@ function init()
     seq:rebuild_timeline()
   end)
 
-  -- MIDIMIX
-  setup_midimix()
-
   -- Load playlists
   check_playlists()
 
@@ -152,7 +142,6 @@ function init()
     while true do
       clock.sleep(1/10)
       ui:decay_flash()
-      midimix:update_leds(seq.tracks)
       redraw()
     end
   end)
@@ -162,69 +151,6 @@ function init()
   print("  Mode: " .. seq.assign_mode:upper())
   print("  MIDI dir: " .. MIDI_DIR)
   print("  Files: " .. #ui.lib_files)
-end
-
-function setup_midimix()
-  midimix:connect(2)
-
-  midimix.on_velocity = function(track_idx, vel)
-    local track = seq.tracks[track_idx]
-    if not track then return end
-    track.velocity_scale = vel
-    if track.output == "internal" then engine.amp(vel) end
-    midimix:update_leds(seq.tracks)
-  end
-
-  midimix.on_mute_toggle = function(track_idx)
-    seq:toggle_mute(track_idx)
-  end
-
-  midimix.on_filter = function(freq)
-    ui.filter_freq = freq
-    engine.lpf(freq)
-  end
-
-  midimix.on_delay_mix = function(mix)
-    engine.delay_mix(mix)
-    params:set("delay_mix", mix)
-  end
-
-  midimix.on_delay_time = function(time)
-    engine.delay_time(time)
-    params:set("delay_time", time)
-  end
-
-  midimix.on_prev_song = function()
-    if queue.position > 1 then
-      queue.position = queue.position - 1
-      load_current()
-    end
-  end
-
-  midimix.on_next_song = function()
-    advance_queue()
-  end
-
-  local bpm_pending = nil
-  local bpm_clock = nil
-  midimix.on_bpm = function(bpm)
-    bpm_pending = bpm
-    if bpm_clock then clock.cancel(bpm_clock) end
-    bpm_clock = clock.run(function()
-      clock.sleep(0.15)
-      if bpm_pending then
-        seq:set_bpm(bpm_pending)
-        bpm_pending = nil
-        bpm_clock = nil
-      end
-    end)
-  end
-
-  midimix.on_panic = function()
-    print("PANIC! All notes off")
-    seq:stop()
-    seq:all_notes_off()
-  end
 end
 
 function save_track_settings()
@@ -326,6 +252,5 @@ end
 
 function cleanup()
   if redraw_clock then clock.cancel(redraw_clock) end
-  midimix:leds_off()
   seq:stop()
 end
