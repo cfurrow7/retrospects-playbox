@@ -650,52 +650,47 @@ function UI:draw_tracker()
   end
 
   local now = self.seq.elapsed
-  local window = 6  -- seconds visible ahead of playhead
-  local lookback = 0.5  -- seconds behind playhead
+  local window = 6
+  local lookback = 0.5
 
-  -- Row layout: 4 rows for GM, OB6, P800, DRM
   local labels = {"GM", "OB", "P8", "DR"}
   local roles = {"bass", "lead", "chord", "drum"}
-  local row_y = {14, 27, 40, 53}
+  local row_y = {12, 25, 38, 51}
   local row_h = 11
-  local left_margin = 16  -- space for labels
-  local track_w = 128 - left_margin
+  local lm = 14
+  local tw = 128 - lm
 
-  -- Build role lookup from tracks
-  local ch_to_role = {}
+  -- Channel to role lookup
+  local ch_role = {}
   for _, track in ipairs(self.seq.tracks) do
-    ch_to_role[track.source_ch] = track.role
+    ch_role[track.source_ch] = track.role
   end
 
-  -- Draw row labels and dividers
+  -- Row labels + dividers
   for i = 1, 4 do
-    local lit = self.flash and self:role_is_lit(roles[i])
-    screen.level(lit and 15 or 6)
-    screen.move(0, row_y[i] + 7)
+    screen.level(self:role_is_lit(roles[i]) and 15 or 5)
+    screen.move(0, row_y[i] + 8)
     screen.text(labels[i])
     screen.level(1)
-    screen.move(left_margin, row_y[i])
+    screen.move(lm, row_y[i])
     screen.line(128, row_y[i])
     screen.stroke()
   end
-  -- Bottom border
   screen.level(1)
-  screen.move(left_margin, row_y[4] + row_h)
+  screen.move(lm, row_y[4] + row_h)
   screen.line(128, row_y[4] + row_h)
   screen.stroke()
 
-  -- Draw playhead
-  local ph_x = left_margin + math.floor(track_w * (lookback / (window + lookback)))
-  screen.level(4)
-  screen.move(ph_x, 10)
+  -- Playhead
+  local ph_x = lm + math.floor(tw * lookback / (window + lookback))
+  screen.level(6)
+  screen.move(ph_x, row_y[1])
   screen.line(ph_x, row_y[4] + row_h)
   screen.stroke()
 
-  -- Scan timeline for events in visible window
+  -- Scan visible window
   local t_start = now - lookback
   local t_end = now + window
-
-  -- Find starting position with binary search
   local lo, hi = 1, #tl
   while lo < hi do
     local mid = math.floor((lo + hi) / 2)
@@ -706,29 +701,21 @@ function UI:draw_tracker()
     local ev = tl[i]
     if ev.time > t_end then break end
     if ev.type == "note_on" and ev.velocity > 0 then
-      local role = ch_to_role[ev.channel]
+      local role = ch_role[ev.channel]
       local row = nil
       for r = 1, 4 do
         if roles[r] == role then row = r; break end
       end
       if row then
-        local frac = (ev.time - t_start) / (window + lookback)
-        local x = left_margin + math.floor(track_w * frac)
-        if x >= left_margin and x <= 127 then
-          -- Brightness: past events dimmer, upcoming brighter
-          local brightness = ev.time <= now and 3 or 10
-          screen.level(brightness)
-
-          if role == "drum" then
-            -- Drum: small tick marks
-            screen.move(x, row_y[row] + 2)
-            screen.line(x, row_y[row] + row_h - 1)
-            screen.stroke()
-          else
-            -- Melodic: note name
-            screen.move(x, row_y[row] + 8)
-            screen.text(note_name(ev.note))
-          end
+        local x = lm + math.floor(tw * (ev.time - t_start) / (window + lookback))
+        if x >= lm and x <= 127 then
+          -- Map note to y position within row (higher pitch = higher line)
+          local nfrac = (ev.note - 24) / 80  -- C1 to G#7 range
+          nfrac = math.max(0, math.min(1, nfrac))
+          local y = row_y[row] + row_h - 1 - math.floor(nfrac * (row_h - 2))
+          screen.level(ev.time <= now and 2 or (8 + math.floor(ev.velocity / 127 * 6)))
+          screen.pixel(x, y)
+          screen.fill()
         end
       end
     end
@@ -736,7 +723,7 @@ function UI:draw_tracker()
 
   -- Time display
   screen.level(6)
-  screen.move(left_margin, 8)
+  screen.move(lm, 8)
   screen.text(format_time(now) .. " / " .. format_time(self.seq.duration))
 end
 
