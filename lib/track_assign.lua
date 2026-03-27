@@ -1,6 +1,6 @@
 -- track_assign.lua: Retrospects live rig routing
 -- Smart assignment: name detection + note analysis scoring
--- GM (bass/ch2), OB-6 (mono lead/ch4), Rev2 (chords/ch11), Drums (internal)
+-- GM (bass/ch2), OB-6 (mono lead/ch4), PRO-800 (chords/ch11), Drums (internal)
 -- Two modes: GREEDY (everything plays) and SMART (best 3 + drums, rest muted)
 
 local TrackAssign = {}
@@ -8,7 +8,7 @@ local TrackAssign = {}
 -- The Retrospects live rig
 TrackAssign.BASS_CH = 2    -- Grandmother / Mother 32
 TrackAssign.LEAD_CH = 4    -- OB-6 (strict mono, latest note wins)
-TrackAssign.CHORD_CH = 11  -- Rev2 (full poly, no cap)
+TrackAssign.CHORD_CH = 11  -- PRO-800 (full poly, no cap)
 
 -- GM drum note to voice mapping (8 voices)
 TrackAssign.gm_drum_map = {
@@ -280,7 +280,7 @@ function TrackAssign.role_label(role)
   local labels = {
     bass  = "GM",
     lead  = "OB6",
-    chord = "REV2",
+    chord = "P800",
     drum  = "DRM",
   }
   return labels[role] or "???"
@@ -291,7 +291,7 @@ function TrackAssign.synth_name(role)
   local names = {
     bass  = "GM ch2",
     lead  = "OB6 ch4",
-    chord = "REV2 ch11",
+    chord = "P800 ch11",
     drum  = "DRM",
   }
   return names[role] or "???"

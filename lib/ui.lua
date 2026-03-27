@@ -15,7 +15,7 @@ local DRUM_VOICE_NAMES = { "KICK", "SNRE", "CHH", "OHH", "CLAP", "LTOM", "HTOM",
 local RIG = {
   { role = "bass",  label = "GM" },
   { role = "lead",  label = "OB6" },
-  { role = "chord", label = "REV2" },
+  { role = "chord", label = "P800" },
   { role = "drum",  label = "DRM" },
 }
 
