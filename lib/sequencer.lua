@@ -85,8 +85,29 @@ function Sequencer:rebuild_timeline()
     self.timeline, bpm,
     self.quantize_div, self.min_velocity, self.min_duration
   )
+  self:build_note_bars()
   self.position = 1
   self.elapsed = 0
+end
+
+-- Build note bars (start/end pairs) for tracker display
+function Sequencer:build_note_bars()
+  self.note_bars = {}
+  if not self.timeline then return end
+  local open = {}  -- key -> index in note_bars
+  for _, ev in ipairs(self.timeline) do
+    local key = ev.channel .. ":" .. ev.note
+    if ev.type == "note_on" and ev.velocity > 0 then
+      local bar = { t1 = ev.time, t2 = ev.time + 0.1, ch = ev.channel, note = ev.note, vel = ev.velocity }
+      table.insert(self.note_bars, bar)
+      open[key] = #self.note_bars
+    elseif ev.type == "note_off" or (ev.type == "note_on" and ev.velocity == 0) then
+      if open[key] then
+        self.note_bars[open[key]].t2 = ev.time
+        open[key] = nil
+      end
+    end
+  end
 end
 
 function Sequencer:get_bpm()
@@ -107,6 +128,12 @@ function Sequencer:set_bpm(bpm)
   local ratio = old_bpm / new_bpm
   for _, event in ipairs(self.timeline) do
     event.time = event.time * ratio
+  end
+  if self.note_bars then
+    for _, bar in ipairs(self.note_bars) do
+      bar.t1 = bar.t1 * ratio
+      bar.t2 = bar.t2 * ratio
+    end
   end
   self.duration = self.duration * ratio
   self.elapsed = self.elapsed * ratio

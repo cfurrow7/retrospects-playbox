@@ -641,8 +641,8 @@ local function note_name(n)
 end
 
 function UI:draw_tracker()
-  local tl = self.seq.timeline
-  if not tl or #tl == 0 then
+  local bars = self.seq.note_bars
+  if not bars or #bars == 0 then
     screen.level(4)
     screen.move(64, 35)
     screen.text_center("No song loaded")
@@ -651,7 +651,7 @@ function UI:draw_tracker()
 
   local now = self.seq.elapsed
   local window = 6
-  local lookback = 0.5
+  local lookback = 1
 
   local labels = {"GM", "OB", "P8", "DR"}
   local roles = {"bass", "lead", "chord", "drum"}
@@ -659,11 +659,14 @@ function UI:draw_tracker()
   local row_h = 11
   local lm = 14
   local tw = 128 - lm
+  local total = window + lookback
 
-  -- Channel to role lookup
-  local ch_role = {}
+  -- Channel to role/row lookup
+  local ch_row = {}
   for _, track in ipairs(self.seq.tracks) do
-    ch_role[track.source_ch] = track.role
+    for r = 1, 4 do
+      if track.role == roles[r] then ch_row[track.source_ch] = r end
+    end
   end
 
   -- Row labels + dividers
@@ -682,43 +685,39 @@ function UI:draw_tracker()
   screen.stroke()
 
   -- Playhead
-  local ph_x = lm + math.floor(tw * lookback / (window + lookback))
+  local ph_x = lm + math.floor(tw * lookback / total)
   screen.level(6)
   screen.move(ph_x, row_y[1])
   screen.line(ph_x, row_y[4] + row_h)
   screen.stroke()
 
-  -- Scan visible window
+  -- Draw note bars
   local t_start = now - lookback
   local t_end = now + window
-  local lo, hi = 1, #tl
-  while lo < hi do
-    local mid = math.floor((lo + hi) / 2)
-    if tl[mid].time < t_start then lo = mid + 1 else hi = mid end
-  end
 
-  for i = lo, #tl do
-    local ev = tl[i]
-    if ev.time > t_end then break end
-    if ev.type == "note_on" and ev.velocity > 0 then
-      local role = ch_role[ev.channel]
-      local row = nil
-      for r = 1, 4 do
-        if roles[r] == role then row = r; break end
-      end
-      if row then
-        local x = lm + math.floor(tw * (ev.time - t_start) / (window + lookback))
-        if x >= lm and x <= 127 then
-          -- Map note to y position within row (higher pitch = higher line)
-          local nfrac = (ev.note - 24) / 80  -- C1 to G#7 range
-          nfrac = math.max(0, math.min(1, nfrac))
-          local y = row_y[row] + row_h - 1 - math.floor(nfrac * (row_h - 2))
-          screen.level(ev.time <= now and 2 or (8 + math.floor(ev.velocity / 127 * 6)))
-          screen.pixel(x, y)
-          screen.fill()
-        end
-      end
-    end
+  for _, bar in ipairs(bars) do
+    if bar.t2 < t_start then goto continue end
+    if bar.t1 > t_end then goto continue end
+
+    local row = ch_row[bar.ch]
+    if not row then goto continue end
+
+    local x1 = lm + math.floor(tw * (math.max(bar.t1, t_start) - t_start) / total)
+    local x2 = lm + math.floor(tw * (math.min(bar.t2, t_end) - t_start) / total)
+    local w = math.max(1, x2 - x1)
+
+    -- Note pitch mapped to y within row
+    local nfrac = math.max(0, math.min(1, (bar.note - 24) / 80))
+    local y = row_y[row] + row_h - 2 - math.floor(nfrac * (row_h - 3))
+
+    -- Past = dim, crossing playhead = bright, future = medium
+    local playing = bar.t1 <= now and bar.t2 > now
+    local past = bar.t2 <= now
+    screen.level(playing and 15 or (past and 3 or 8))
+    screen.rect(x1, y, w, 2)
+    screen.fill()
+
+    ::continue::
   end
 
   -- Time display
