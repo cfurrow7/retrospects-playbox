@@ -355,8 +355,14 @@ function UI:draw_play()
     if song_pc then
       screen.level(self.pc_flash and self.pc_flash > 0 and 15 or 6)
       screen.move(x, 28)
-      screen.text("P8:" .. song_pc)
-      x = x + 28
+      local bank = math.floor(song_pc / 128)
+      local prog = song_pc % 128
+      if bank > 0 then
+        screen.text("P8:" .. bank .. "-" .. prog)
+      else
+        screen.text("P8:" .. prog)
+      end
+      x = x + 32
     end
     if song_ob6 then
       screen.level(self.ob6_pc_flash and self.ob6_pc_flash > 0 and 15 or 6)
@@ -794,12 +800,16 @@ function UI:enc_play(n, d)
       end
       self.ob6_pc_flash = 1.0
     else
-      -- E3: Browse PRO-800 program changes on ch11
+      -- E3: Browse PRO-800 patches (bank select + PC on ch11)
       local cur_pc = song.pc or 0
-      local new_pc = util.clamp(cur_pc + d, 0, 127)
+      local new_pc = util.clamp(cur_pc + d, 0, 511)
       song.pc = new_pc
       if self.seq.midi_out then
-        self.seq.midi_out:program_change(new_pc, 11)
+        local bank = math.floor(new_pc / 128)
+        local prog = new_pc % 128
+        self.seq.midi_out:cc(0, bank, 11)    -- bank select MSB
+        self.seq.midi_out:cc(32, 0, 11)      -- bank select LSB
+        self.seq.midi_out:program_change(prog, 11)
       end
       self.pc_flash = 1.0
     end

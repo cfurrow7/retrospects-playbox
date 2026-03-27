@@ -306,7 +306,11 @@ function load_current()
   -- Send program changes if song has them assigned
   if seq.midi_out then
     if song.pc then
-      seq.midi_out:program_change(song.pc, TrackAssign.CHORD_CH)
+      local bank = math.floor(song.pc / 128)
+      local prog = song.pc % 128
+      seq.midi_out:cc(0, bank, TrackAssign.CHORD_CH)
+      seq.midi_out:cc(32, 0, TrackAssign.CHORD_CH)
+      seq.midi_out:program_change(prog, TrackAssign.CHORD_CH)
     end
     if song.ob6_pc then
       seq.midi_out:program_change(song.ob6_pc, TrackAssign.LEAD_CH)
