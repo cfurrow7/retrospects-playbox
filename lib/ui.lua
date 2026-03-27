@@ -153,6 +153,7 @@ function UI:decay_flash()
   for i = 1, 8 do
     if self.drum_flash[i] > 0 then self.drum_flash[i] = self.drum_flash[i] - 1 end
   end
+  if self.pc_flash and self.pc_flash > 0 then self.pc_flash = self.pc_flash - 0.15 end
   local target = math.min(1.0, self.note_hits * 0.15)
   if target > self.energy then
     self.energy = self.energy + (target - self.energy) * 0.6
@@ -347,9 +348,17 @@ function UI:draw_play()
   if self.seq.bpm_override then bpm_str = bpm_str .. "*" end
   screen.text(bpm_str)
 
+  -- PRO-800 PC
+  local song_pc = song and song.pc
+  if song_pc then
+    screen.level(self.pc_flash and self.pc_flash > 0 and 15 or 6)
+    screen.move(55, 28)
+    screen.text("PC:" .. song_pc)
+  end
+
   -- Play state
   screen.level(15)
-  screen.move(70, 28)
+  screen.move(95, 28)
   screen.text(self.seq.playing and "> PLAY" or "  STOP")
 
   -- Progress bar
@@ -644,9 +653,17 @@ function UI:enc_play(n, d)
     local bpm = self.seq:get_bpm() + d
     self.seq:set_bpm(bpm)
   elseif n == 3 then
-    if d > 0 and self.queue:has_next() then
-      if self.state.on_next then self.state.on_next() end
+    -- Browse PRO-800 program changes on ch11
+    local song = self.queue:current()
+    if not song then return end
+    local cur_pc = song.pc or 0
+    local new_pc = util.clamp(cur_pc + d, 0, 127)
+    song.pc = new_pc
+    -- Send PC live so you hear the patch
+    if self.seq.midi_out then
+      self.seq.midi_out:program_change(new_pc, 11)
     end
+    self.pc_flash = 1.0
   end
 end
 
