@@ -356,18 +356,21 @@ function MidiParser.filter_timeline(events, bpm, quantize_div, min_vel, min_dur)
 
   if min_dur > 0 then
     for i, ev in ipairs(events) do
-      local key = ev.channel .. ":" .. ev.note
-      if ev.type == "note_on" and ev.velocity > 0 then
-        note_starts[key] = { time = ev.time, idx = i }
-      elseif ev.type == "note_off" or (ev.type == "note_on" and ev.velocity == 0) then
-        local start = note_starts[key]
-        if start then
-          local dur = ev.time - start.time
-          if dur < min_dur then
-            short_notes[start.idx] = true
-            short_notes[i] = true
+      -- Skip drum channel (ch10) - drum hits have near-zero duration
+      if ev.channel ~= 10 then
+        local key = ev.channel .. ":" .. ev.note
+        if ev.type == "note_on" and ev.velocity > 0 then
+          note_starts[key] = { time = ev.time, idx = i }
+        elseif ev.type == "note_off" or (ev.type == "note_on" and ev.velocity == 0) then
+          local start = note_starts[key]
+          if start then
+            local dur = ev.time - start.time
+            if dur < min_dur then
+              short_notes[start.idx] = true
+              short_notes[i] = true
+            end
+            note_starts[key] = nil
           end
-          note_starts[key] = nil
         end
       end
     end
@@ -379,11 +382,11 @@ function MidiParser.filter_timeline(events, bpm, quantize_div, min_vel, min_dur)
   for i, ev in ipairs(events) do
     local keep = true
 
-    -- Drop short notes
+    -- Drop short notes (skip drum channel)
     if short_notes[i] then keep = false end
 
-    -- Drop quiet notes
-    if keep and ev.type == "note_on" and ev.velocity > 0 and min_vel > 0 then
+    -- Drop quiet notes (skip drum channel)
+    if keep and ev.channel ~= 10 and ev.type == "note_on" and ev.velocity > 0 and min_vel > 0 then
       if ev.velocity < min_vel then keep = false end
     end
 
