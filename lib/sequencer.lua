@@ -94,15 +94,22 @@ function Sequencer:get_bpm()
 end
 
 function Sequencer:set_bpm(bpm)
+  local old_bpm = self.bpm_override or self.original_bpm
   if bpm then
     self.bpm_override = math.max(20, math.min(300, bpm))
   else
     self.bpm_override = nil
   end
-  local was_playing = self.playing
-  if was_playing then self:stop() end
-  self:rebuild_timeline()
-  if was_playing then self:play() end
+  local new_bpm = self.bpm_override or self.original_bpm
+  if not self.timeline or old_bpm == new_bpm then return end
+
+  -- Scale all event times and duration by the BPM ratio
+  local ratio = old_bpm / new_bpm
+  for _, event in ipairs(self.timeline) do
+    event.time = event.time * ratio
+  end
+  self.duration = self.duration * ratio
+  self.elapsed = self.elapsed * ratio
 end
 
 function Sequencer:play()

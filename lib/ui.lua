@@ -1,5 +1,5 @@
 -- ui.lua: Screen drawing for Retrospects Playbox
--- 5 pages: Now Playing, Tracks, Drums, Queue, Library
+-- 6 pages: Now Playing, Tracks, Drums, Queue, Library, Tracker
 -- Same layout as midi-playbox with Retrospects rig display
 
 local UI = {}
@@ -7,7 +7,7 @@ UI.__index = UI
 
 local TrackAssign = include("retrospects-playbox/lib/track_assign")
 
-local PAGES = { "PLAY", "TRACKS", "DRUMS", "QUEUE", "LIBRARY" }
+local PAGES = { "PLAY", "TRACKS", "DRUMS", "QUEUE", "LIBRARY", "TRACKER" }
 local KIT_NAMES = { "808", "909", "606" }
 local DRUM_VOICE_NAMES = { "KICK", "SNRE", "CHH", "OHH", "CLAP", "LTOM", "HTOM", "CRSH" }
 
@@ -252,9 +252,9 @@ function UI:draw()
   screen.text(mode_label)
 
   -- Page dots
-  for i = 1, 5 do
+  for i = 1, 6 do
     screen.level(i == self.page and 15 or 2)
-    screen.rect(88 + (i - 1) * 5, 1, 3, 3)
+    screen.rect(85 + (i - 1) * 5, 1, 3, 3)
     screen.fill()
   end
 
@@ -271,6 +271,8 @@ function UI:draw()
     self:draw_queue()
   elseif self.page == 5 then
     self:draw_library()
+  elseif self.page == 6 then
+    self:draw_tracker()
   end
 
   self:draw_lissajous()
@@ -630,11 +632,128 @@ function UI:draw_library()
   screen.text_right("K3:add K1+K3:fav K2:play")
 end
 
+-- ===== TRACKER PAGE =====
+
+local NOTE_NAMES = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"}
+
+local function note_name(n)
+  return NOTE_NAMES[(n % 12) + 1] .. math.floor(n / 12 - 1)
+end
+
+function UI:draw_tracker()
+  local tl = self.seq.timeline
+  if not tl or #tl == 0 then
+    screen.level(4)
+    screen.move(64, 35)
+    screen.text_center("No song loaded")
+    return
+  end
+
+  local now = self.seq.elapsed
+  local window = 6  -- seconds visible ahead of playhead
+  local lookback = 0.5  -- seconds behind playhead
+
+  -- Row layout: 4 rows for GM, OB6, P800, DRM
+  local labels = {"GM", "OB", "P8", "DR"}
+  local roles = {"bass", "lead", "chord", "drum"}
+  local row_y = {14, 27, 40, 53}
+  local row_h = 11
+  local left_margin = 16  -- space for labels
+  local track_w = 128 - left_margin
+
+  -- Build role lookup from tracks
+  local ch_to_role = {}
+  for _, track in ipairs(self.seq.tracks) do
+    ch_to_role[track.source_ch] = track.role
+  end
+
+  -- Draw row labels and dividers
+  for i = 1, 4 do
+    local lit = self.flash and self:role_is_lit(roles[i])
+    screen.level(lit and 15 or 6)
+    screen.move(0, row_y[i] + 7)
+    screen.text(labels[i])
+    screen.level(1)
+    screen.move(left_margin, row_y[i])
+    screen.line(128, row_y[i])
+    screen.stroke()
+  end
+  -- Bottom border
+  screen.level(1)
+  screen.move(left_margin, row_y[4] + row_h)
+  screen.line(128, row_y[4] + row_h)
+  screen.stroke()
+
+  -- Draw playhead
+  local ph_x = left_margin + math.floor(track_w * (lookback / (window + lookback)))
+  screen.level(4)
+  screen.move(ph_x, 10)
+  screen.line(ph_x, row_y[4] + row_h)
+  screen.stroke()
+
+  -- Scan timeline for events in visible window
+  local t_start = now - lookback
+  local t_end = now + window
+
+  -- Find starting position with binary search
+  local lo, hi = 1, #tl
+  while lo < hi do
+    local mid = math.floor((lo + hi) / 2)
+    if tl[mid].time < t_start then lo = mid + 1 else hi = mid end
+  end
+
+  for i = lo, #tl do
+    local ev = tl[i]
+    if ev.time > t_end then break end
+    if ev.type == "note_on" and ev.velocity > 0 then
+      local role = ch_to_role[ev.channel]
+      local row = nil
+      for r = 1, 4 do
+        if roles[r] == role then row = r; break end
+      end
+      if row then
+        local frac = (ev.time - t_start) / (window + lookback)
+        local x = left_margin + math.floor(track_w * frac)
+        if x >= left_margin and x <= 127 then
+          -- Brightness: past events dimmer, upcoming brighter
+          local brightness = ev.time <= now and 3 or 10
+          screen.level(brightness)
+
+          if role == "drum" then
+            -- Drum: small tick marks
+            screen.move(x, row_y[row] + 2)
+            screen.line(x, row_y[row] + row_h - 1)
+            screen.stroke()
+          else
+            -- Melodic: note name
+            screen.move(x, row_y[row] + 8)
+            screen.text(note_name(ev.note))
+          end
+        end
+      end
+    end
+  end
+
+  -- Time display
+  screen.level(6)
+  screen.move(left_margin, 8)
+  screen.text(format_time(now) .. " / " .. format_time(self.seq.duration))
+end
+
+function UI:role_is_lit(role)
+  for ti, track in ipairs(self.seq.tracks) do
+    if track.role == role and self.flash[ti] and self.flash[ti] > 0 then
+      return true
+    end
+  end
+  return false
+end
+
 -- ===== INPUT HANDLING =====
 
 function UI:enc(n, d)
   if n == 1 then
-    self.page = util.clamp(self.page + d, 1, 5)
+    self.page = util.clamp(self.page + d, 1, 6)
   elseif self.page == 1 then
     self:enc_play(n, d)
   elseif self.page == 2 then
@@ -650,16 +769,8 @@ end
 
 function UI:enc_play(n, d)
   if n == 2 then
-    -- Debounce BPM: update display immediately, rebuild timeline after settling
-    local bpm = (self.seq.bpm_override or self.seq.original_bpm) + d
-    bpm = math.max(20, math.min(300, bpm))
-    self.seq.bpm_override = bpm
-    if self._bpm_clock then clock.cancel(self._bpm_clock) end
-    self._bpm_clock = clock.run(function()
-      clock.sleep(0.25)
-      self.seq:set_bpm(bpm)
-      self._bpm_clock = nil
-    end)
+    local bpm = self.seq:get_bpm() + d
+    self.seq:set_bpm(bpm)
   elseif n == 3 then
     local song = self.queue:current()
     if not song then return end
