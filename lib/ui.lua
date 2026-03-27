@@ -258,7 +258,7 @@ function UI:draw()
   end
 
   -- Mute overlay
-  if self.k1_held and self.page ~= 1 and self.page ~= 4 and self.page ~= 5 then
+  if self.k1_held and self.page ~= 4 and self.page ~= 5 then
     self:draw_mute_overlay()
     screen.update()
     return
@@ -773,21 +773,20 @@ end
 function UI:key(n, z)
   if n == 1 then
     self.k1_held = (z == 1)
-    if z == 0 and self.tune_active and self.seq.midi_out then
-      self.seq.midi_out:note_off(69, 0, 11)
-      self.tune_active = false
-    end
     return
   end
 
-  -- K1+K2: hold tuning note A4 on PRO-800 (ch11)
-  if self.k1_held and n == 2 and self.seq.midi_out then
-    if z == 1 then
-      self.seq.midi_out:note_on(69, 100, 11)
-      self.tune_active = true
-    else
+  -- Track K2 held state
+  if n == 2 then self.k2_held = (z == 1) end
+
+  -- K2+K3 on PLAY page: toggle tuning note A4 on PRO-800 (ch11)
+  if self.page == 1 and n == 3 and z == 1 and self.k2_held and self.seq.midi_out then
+    if self.tune_active then
       self.seq.midi_out:note_off(69, 0, 11)
       self.tune_active = false
+    else
+      self.seq.midi_out:note_on(69, 100, 11)
+      self.tune_active = true
     end
     return
   end
