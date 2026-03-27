@@ -773,6 +773,22 @@ end
 function UI:key(n, z)
   if n == 1 then
     self.k1_held = (z == 1)
+    if z == 0 and self.tune_active and self.seq.midi_out then
+      self.seq.midi_out:note_off(69, 0, 11)
+      self.tune_active = false
+    end
+    return
+  end
+
+  -- K1+K2: hold tuning note A4 on PRO-800 (ch11)
+  if self.k1_held and n == 2 and self.seq.midi_out then
+    if z == 1 then
+      self.seq.midi_out:note_on(69, 100, 11)
+      self.tune_active = true
+    else
+      self.seq.midi_out:note_off(69, 0, 11)
+      self.tune_active = false
+    end
     return
   end
 
