@@ -633,13 +633,6 @@ end
 -- ===== INPUT HANDLING =====
 
 function UI:enc(n, d)
-  if self.k1_held then
-    if n == 2 then
-      self.mute_cursor = util.clamp(self.mute_cursor + d, 1, math.max(1, self.seq:track_count()))
-    end
-    return
-  end
-
   if n == 1 then
     self.page = util.clamp(self.page + d, 1, 5)
   elseif self.page == 1 then
@@ -657,8 +650,16 @@ end
 
 function UI:enc_play(n, d)
   if n == 2 then
-    local bpm = self.seq:get_bpm() + d
-    self.seq:set_bpm(bpm)
+    -- Debounce BPM: update display immediately, rebuild timeline after settling
+    local bpm = (self.seq.bpm_override or self.seq.original_bpm) + d
+    bpm = math.max(20, math.min(300, bpm))
+    self.seq.bpm_override = bpm
+    if self._bpm_clock then clock.cancel(self._bpm_clock) end
+    self._bpm_clock = clock.run(function()
+      clock.sleep(0.25)
+      self.seq:set_bpm(bpm)
+      self._bpm_clock = nil
+    end)
   elseif n == 3 then
     local song = self.queue:current()
     if not song then return end
