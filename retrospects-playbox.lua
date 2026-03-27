@@ -1,6 +1,6 @@
 -- RETROSPECTS PLAYBOX
 -- MIDI jukebox for The Retrospects live rig
--- Auto-assigns any MIDI file to: GM(bass/ch2), OB-6(mono lead/ch4), PRO-800(chords/ch11), Drums(internal)
+-- Auto-assigns any MIDI file to: M32(bass/ch2), OB-6(mono lead/ch4), PRO-800(chords/ch11), Drums(internal)
 -- Two modes: GREEDY (all tracks play) / SMART (best 3 + drums, rest muted)
 --
 -- E1: page select | E2/E3: context-sensitive
@@ -147,7 +147,7 @@ function init()
   end)
 
   print("RETROSPECTS PLAYBOX v2.0")
-  print("  GM(ch2/bass) OB6(ch4/mono lead) P800(ch11/chords) DRM(internal)")
+  print("  M32(ch2/bass) OB6(ch4/mono lead) P800(ch11/chords) DRM(internal)")
   print("  Mode: " .. seq.assign_mode:upper())
   print("  MIDI dir: " .. MIDI_DIR)
   print("  Files: " .. #ui.lib_files)

@@ -1,5 +1,5 @@
 -- sequencer.lua: MIDI playback engine for Retrospects
--- Routes to GM(ch2), OB-6(ch4, mono), PRO-800(ch11, poly), Drums(internal)
+-- Routes to M32(ch2), OB-6(ch4, mono), PRO-800(ch11, poly), Drums(internal)
 -- OB-6 mono filter: latest note wins, OB-6 handles legato naturally
 
 local MidiParser = include("retrospects-playbox/lib/midi_parser")

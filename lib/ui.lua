@@ -13,7 +13,7 @@ local DRUM_VOICE_NAMES = { "KICK", "SNRE", "CHH", "OHH", "CLAP", "LTOM", "HTOM",
 
 -- Rig display order
 local RIG = {
-  { role = "bass",  label = "GM" },
+  { role = "bass",  label = "M32" },
   { role = "lead",  label = "OB6" },
   { role = "chord", label = "P800" },
   { role = "drum",  label = "DRM" },
@@ -653,7 +653,7 @@ function UI:draw_tracker()
   local window = 6
   local lookback = 1
 
-  local labels = {"GM", "OB", "P8", "DR"}
+  local labels = {"M32", "OB", "P8", "DR"}
   local roles = {"bass", "lead", "chord", "drum"}
   local row_y = {12, 25, 38, 51}
   local row_h = 11
