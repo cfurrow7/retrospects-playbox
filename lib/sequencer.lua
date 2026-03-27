@@ -38,6 +38,9 @@ function Sequencer.new()
   self.ob6_current = nil   -- the one note currently sounding
   self.ob6_held = {}       -- all notes with note-on still active (for release tracking)
 
+  -- Drum voice remap: voice_index -> new_voice_index (nil = no remap, -1 = muted)
+  self.drum_remap = {}
+
   -- Callbacks
   self.on_note = nil
   self.on_end = nil
@@ -218,10 +221,16 @@ function Sequencer:route_event(event)
     if event.type == "note_on" and event.velocity > 0 then
       local voice = TrackAssign.map_drum_note(event.note)
       if voice then
-        local vel = (event.velocity / 127) * (track.velocity_scale or 1.0)
-        engine.trig_kit(voice, vel)
-        if self.on_note then
-          self.on_note(track_idx, event.note, event.velocity, voice)
+        -- Apply per-song drum remap
+        if self.drum_remap[voice] ~= nil then
+          voice = self.drum_remap[voice]
+        end
+        if voice and voice >= 0 then
+          local vel = (event.velocity / 127) * (track.velocity_scale or 1.0)
+          engine.trig_kit(voice, vel)
+          if self.on_note then
+            self.on_note(track_idx, event.note, event.velocity, voice)
+          end
         end
       end
     end

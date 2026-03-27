@@ -33,12 +33,26 @@ function load_patches()
   local f = io.open(PATCHES_FILE, "r")
   if not f then return end
   for line in f:lines() do
-    local name, p1, p2 = line:match("^(.-)%s*|%s*(%d+)%s*|%s*(%d+)%s*$")
-    if not name then
-      name, p1 = line:match("^(.-)%s*|%s*(%d+)%s*$")
+    -- Format: filename|pc|ob6_pc|drum_remap
+    local parts = {}
+    for part in (line .. "|"):gmatch("(.-)%s*|") do
+      table.insert(parts, part)
     end
-    if name then
-      patches[name] = { pc = tonumber(p1), ob6_pc = tonumber(p2) }
+    if #parts >= 2 then
+      local name = parts[1]
+      local p = {
+        pc = tonumber(parts[2]),
+        ob6_pc = tonumber(parts[3]),
+        drum_remap = {},
+      }
+      -- Parse drum remap: "0:1,4:2,6:-1"
+      if parts[4] and parts[4] ~= "" then
+        for pair in parts[4]:gmatch("([^,]+)") do
+          local from, to = pair:match("(%d+):(%-?%d+)")
+          if from then p.drum_remap[tonumber(from)] = tonumber(to) end
+        end
+      end
+      patches[name] = p
     end
   end
   f:close()
@@ -50,20 +64,39 @@ function save_patches()
   if not f then return end
   for name, p in pairs(patches) do
     local p1 = p.pc or 0
-    if p.ob6_pc then
-      f:write(name .. "|" .. p1 .. "|" .. p.ob6_pc .. "\n")
-    else
-      f:write(name .. "|" .. p1 .. "\n")
+    local p2 = p.ob6_pc and tostring(p.ob6_pc) or ""
+    -- Encode drum remap
+    local dr_parts = {}
+    if p.drum_remap then
+      for from, to in pairs(p.drum_remap) do
+        table.insert(dr_parts, from .. ":" .. to)
+      end
     end
+    local dr = table.concat(dr_parts, ",")
+    f:write(name .. "|" .. p1 .. "|" .. p2 .. "|" .. dr .. "\n")
   end
   f:close()
 end
 
--- Save a PC for the current song and persist to disk
+-- Save current song settings to disk
 function save_song_pc(song)
   if not song then return end
   local name = song.file:match(".*/(.+)$") or song.file
-  patches[name] = { pc = song.pc, ob6_pc = song.ob6_pc }
+  if not patches[name] then patches[name] = {} end
+  patches[name].pc = song.pc
+  patches[name].ob6_pc = song.ob6_pc
+  save_patches()
+end
+
+function save_song_drums()
+  local song = queue:current()
+  if not song then return end
+  local name = song.file:match(".*/(.+)$") or song.file
+  if not patches[name] then patches[name] = {} end
+  patches[name].drum_remap = {}
+  for k, v in pairs(seq.drum_remap) do
+    patches[name].drum_remap[k] = v
+  end
   save_patches()
 end
 
@@ -75,6 +108,15 @@ function apply_saved_patches(song)
   if p then
     if not song.pc then song.pc = p.pc end
     if not song.ob6_pc then song.ob6_pc = p.ob6_pc end
+    -- Apply drum remap
+    seq.drum_remap = {}
+    if p.drum_remap then
+      for k, v in pairs(p.drum_remap) do
+        seq.drum_remap[k] = v
+      end
+    end
+  else
+    seq.drum_remap = {}
   end
 end
 
@@ -98,6 +140,10 @@ function init()
 
   state.on_save_pc = function()
     save_song_pc(queue:current())
+  end
+
+  state.on_save_drums = function()
+    save_song_drums()
   end
 
   state.on_play_file = function(entry)

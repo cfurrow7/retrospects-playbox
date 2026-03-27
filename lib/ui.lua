@@ -497,17 +497,20 @@ function UI:draw_tracks()
   end
 end
 
+local DRUM_REMAP_NAMES = { "KICK", "SNRE", "CHH", "OHH", "CLAP", "LTOM", "HTOM", "CRSH", "OFF" }
+
 function UI:draw_drums()
+  -- Top controls (cursor 1-5)
   screen.level(self.drum_cursor == 1 and 15 or 6)
   screen.move(0, 14)
-  screen.text("Kit: " .. KIT_NAMES[self.state.kit or 1])
+  screen.text("Kit:" .. KIT_NAMES[self.state.kit or 1])
 
   screen.level(self.drum_cursor == 2 and 15 or 6)
-  screen.move(0, 24)
+  screen.move(40, 14)
   screen.text("Vol:" .. math.floor((self.drum_vol or 0.8) * 100) .. "%")
 
   screen.level(self.drum_cursor == 3 and 15 or 6)
-  screen.move(50, 24)
+  screen.move(82, 14)
   local freq_display
   if self.filter_freq >= 20000 then
     freq_display = "OFF"
@@ -518,23 +521,44 @@ function UI:draw_drums()
   end
   screen.text("LPF:" .. freq_display)
 
-  screen.level(self.drum_cursor == 4 and 15 or 6)
-  screen.move(0, 34)
-  screen.text("Res:" .. string.format("%.1f", self.filter_res))
-
-  screen.level(self.drum_cursor == 5 and 15 or 6)
-  screen.move(50, 34)
-  screen.text("Rnd:" .. math.floor(self.random_amt * 100) .. "%")
-
+  -- Voice remap grid (cursor 6-13)
   for i = 1, 8 do
     local x = ((i - 1) % 4) * 32
-    local y = 40 + math.floor((i - 1) / 4) * 12
-    screen.level(self.drum_flash[i] > 0 and 15 or 4)
-    screen.move(x + 2, y + 8)
+    local y = 22 + math.floor((i - 1) / 4) * 20
+    local selected = (self.drum_cursor == i + 5)
+    local remap = self.seq.drum_remap[i - 1]
+    local target_name
+    if remap == nil then
+      target_name = DRUM_VOICE_NAMES[i]
+    elseif remap < 0 then
+      target_name = "OFF"
+    else
+      target_name = DRUM_REMAP_NAMES[remap + 1]
+    end
+
+    -- Voice name
+    screen.level(selected and 15 or 6)
+    screen.move(x + 2, y + 6)
     screen.text(DRUM_VOICE_NAMES[i])
+
+    -- Arrow and target (if remapped)
+    if remap ~= nil then
+      screen.level(selected and 15 or 10)
+      screen.move(x + 2, y + 14)
+      screen.text(">" .. target_name)
+    end
+
+    -- Activity bar
     screen.level(self.drum_flash[i] > 0 and 12 or 1)
-    screen.rect(x, y + 10, 28, 2)
+    screen.rect(x, y + 16, 28, 2)
     screen.fill()
+
+    -- Selection indicator
+    if selected then
+      screen.level(4)
+      screen.rect(x, y, 30, 19)
+      screen.stroke()
+    end
   end
 end
 
@@ -833,7 +857,7 @@ end
 
 function UI:enc_drums(n, d)
   if n == 2 then
-    self.drum_cursor = util.clamp(self.drum_cursor + d, 1, 5)
+    self.drum_cursor = util.clamp(self.drum_cursor + d, 1, 13)
   elseif n == 3 then
     if self.drum_cursor == 1 then
       self.state.kit = util.clamp((self.state.kit or 1) + d, 1, 3)
@@ -847,12 +871,27 @@ function UI:enc_drums(n, d)
       else freq = math.max(60, freq / 1.08) end
       self.filter_freq = freq
       engine.lpf(freq)
-    elseif self.drum_cursor == 4 then
-      self.filter_res = util.clamp(self.filter_res + d * 0.05, 0.1, 1.0)
-      engine.res(self.filter_res)
-    elseif self.drum_cursor == 5 then
-      self.random_amt = util.clamp(self.random_amt + d * 0.02, 0, 1)
-      engine.random_amt(self.random_amt)
+    elseif self.drum_cursor >= 6 and self.drum_cursor <= 13 then
+      -- Remap drum voice: cycle through KICK..CRSH, OFF, or back to default
+      local voice = self.drum_cursor - 6  -- 0-7
+      local cur = self.seq.drum_remap[voice]
+      local val
+      if cur == nil then
+        -- Currently default, start cycling
+        val = voice + d
+      else
+        val = cur + d
+      end
+      -- Range: -1 (OFF) to 7 (CRSH), nil wraps back to default
+      if val < -1 then
+        self.seq.drum_remap[voice] = nil  -- back to default
+      elseif val > 7 then
+        self.seq.drum_remap[voice] = nil  -- back to default
+      else
+        self.seq.drum_remap[voice] = val
+      end
+      -- Auto-save
+      if self.state.on_save_drums then self.state.on_save_drums() end
     end
   end
 end
