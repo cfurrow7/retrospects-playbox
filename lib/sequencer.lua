@@ -1,5 +1,5 @@
 -- sequencer.lua: MIDI playback engine for Retrospects
--- Routes to M32(ch2), OB-6(ch4, mono), PRO-800(ch11, poly), Drums(internal)
+-- Routes to Mother-32(ch2), OB-6(ch4, mono), PRO-800(ch11, poly), Drums(internal)
 -- OB-6 mono filter: latest note wins, OB-6 handles legato naturally
 
 local MidiParser = include("retrospects-playbox/lib/midi_parser")
@@ -37,6 +37,14 @@ function Sequencer.new()
   -- OB-6 mono state
   self.ob6_current = nil   -- the one note currently sounding
   self.ob6_held = {}       -- all notes with note-on still active (for release tracking)
+
+  -- Mother-32 mono state (same approach as OB-6)
+  self.m32_current = nil
+  self.m32_held = {}
+
+  -- PRO-800 voice cap: oldest notes get stolen when limit is hit
+  self.chord_max_poly = 8    -- configurable via params
+  self.chord_voice_order = {} -- ordered list of active notes on chord ch, oldest first
 
   -- Drum voice remap: voice_index -> new_voice_index (nil = no remap, -1 = muted)
   self.drum_remap = {}
@@ -192,6 +200,9 @@ function Sequencer:stop()
   self:all_notes_off()
   self.ob6_current = nil
   self.ob6_held = {}
+  self.m32_current = nil
+  self.m32_held = {}
+  self.chord_voice_order = {}
 end
 
 function Sequencer:restart()
@@ -243,8 +254,13 @@ function Sequencer:route_event(event)
       -- OB-6 mono filter: latest note wins
       if track.role == "lead" then
         self:route_mono_lead(event, track, track_idx, note)
+      elseif track.role == "bass" then
+        -- Mother-32 mono filter: same as OB-6
+        self:route_mono_bass(event, track, track_idx, note)
+      elseif track.role == "chord" then
+        -- PRO-800 with voice cap: steal oldest notes when limit hit
+        self:route_capped_chord(event, track, track_idx, note)
       else
-        -- Bass and chord: send everything, synths handle overflow
         self:route_poly(event, track, track_idx, note)
       end
     end
@@ -284,7 +300,84 @@ function Sequencer:route_mono_lead(event, track, track_idx, note)
   end
 end
 
--- Bass and chord: normal poly routing
+-- Mother-32 mono bass: strict mono, latest note wins (mirrors OB-6 approach)
+function Sequencer:route_mono_bass(event, track, track_idx, note)
+  local ch = TrackAssign.BASS_CH
+  local scale = track.velocity_scale or 1.0
+
+  if event.type == "note_on" and event.velocity > 0 then
+    if scale <= 0.01 then return end
+    local scaled_vel = math.floor(event.velocity * scale)
+    scaled_vel = math.max(1, math.min(127, scaled_vel))
+
+    if self.m32_current then
+      self.midi_out:note_off(self.m32_current, 0, ch)
+    end
+
+    self.midi_out:note_on(note, scaled_vel, ch)
+    self.m32_current = note
+    self.m32_held[note] = true
+
+    if self.on_note then
+      self.on_note(track_idx, note, scaled_vel)
+    end
+  elseif event.type == "note_off" or (event.type == "note_on" and event.velocity == 0) then
+    self.m32_held[note] = nil
+    if note == self.m32_current then
+      self.midi_out:note_off(note, 0, ch)
+      self.m32_current = nil
+    end
+  end
+end
+
+-- PRO-800 capped chord: limit simultaneous notes, steal oldest when cap hit
+function Sequencer:route_capped_chord(event, track, track_idx, note)
+  local ch = TrackAssign.CHORD_CH
+  local scale = track.velocity_scale or 1.0
+
+  if event.type == "note_on" and event.velocity > 0 then
+    if scale <= 0.01 then return end
+    local scaled_vel = math.floor(event.velocity * scale)
+    scaled_vel = math.max(1, math.min(127, scaled_vel))
+
+    -- Remove if already in voice list (re-trigger)
+    for i, n in ipairs(self.chord_voice_order) do
+      if n == note then
+        table.remove(self.chord_voice_order, i)
+        break
+      end
+    end
+
+    -- Steal oldest voices if at capacity
+    while #self.chord_voice_order >= self.chord_max_poly do
+      local stolen = table.remove(self.chord_voice_order, 1)
+      self.midi_out:note_off(stolen, 0, ch)
+      local key = ch * 256 + stolen
+      self.active_notes[key] = nil
+    end
+
+    self.midi_out:note_on(note, scaled_vel, ch)
+    table.insert(self.chord_voice_order, note)
+    local key = ch * 256 + note
+    self.active_notes[key] = true
+
+    if self.on_note then
+      self.on_note(track_idx, note, scaled_vel)
+    end
+  elseif event.type == "note_off" or (event.type == "note_on" and event.velocity == 0) then
+    self.midi_out:note_off(note, 0, ch)
+    local key = ch * 256 + note
+    self.active_notes[key] = nil
+    for i, n in ipairs(self.chord_voice_order) do
+      if n == note then
+        table.remove(self.chord_voice_order, i)
+        break
+      end
+    end
+  end
+end
+
+-- Generic poly routing (fallback for unassigned tracks)
 function Sequencer:route_poly(event, track, track_idx, note)
   local channels = track.out_channels or {1}
   local scale = track.velocity_scale or 1.0
@@ -326,6 +419,14 @@ function Sequencer:all_notes_off()
       self.ob6_current = nil
     end
     self.ob6_held = {}
+    -- Clear Mother-32 mono note
+    if self.m32_current then
+      self.midi_out:note_off(self.m32_current, 0, TrackAssign.BASS_CH)
+      self.m32_current = nil
+    end
+    self.m32_held = {}
+    -- Clear PRO-800 voice order
+    self.chord_voice_order = {}
     -- Reset all Retrospects channels: sustain off, all notes off, all sound off
     for _, ch in ipairs({TrackAssign.BASS_CH, TrackAssign.LEAD_CH, TrackAssign.CHORD_CH}) do
       self.midi_out:cc(64, 0, ch)   -- sustain pedal off

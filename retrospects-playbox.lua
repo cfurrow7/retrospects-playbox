@@ -1,6 +1,6 @@
 -- RETROSPECTS PLAYBOX
 -- MIDI jukebox for The Retrospects live rig
--- Auto-assigns any MIDI file to: M32(bass/ch2), OB-6(mono lead/ch4), PRO-800(chords/ch11), Drums(internal)
+-- Auto-assigns any MIDI file to: Mother-32(bass/ch2), OB-6(mono lead/ch4), PRO-800(chords/ch11), Drums(internal)
 -- Two modes: GREEDY (all tracks play) / SMART (best 3 + drums, rest muted)
 --
 -- E1: page select | E2/E3: context-sensitive
@@ -216,6 +216,11 @@ function init()
     end
   end)
 
+  params:add_number("chord_max_poly", "P800 Max Voices", 1, 16, 8)
+  params:set_action("chord_max_poly", function(val)
+    seq.chord_max_poly = val
+  end)
+
   params:add_separator("MIDI FILTER")
 
   params:add_option("quantize", "Quantize", {"Off", "1/4", "1/8", "1/16", "1/32"}, 3)
@@ -240,6 +245,16 @@ function init()
 
   -- Load playlists
   check_playlists()
+  if queue:count() > 0 then
+    -- Load first song but don't play
+    local song = queue:current()
+    if song then
+      apply_saved_patches(song)
+      seq:load(song.file)
+      apply_locked_settings()
+      print("Ready: " .. song.name .. " (" .. seq:get_bpm() .. " BPM, " .. seq:track_count() .. " tracks)")
+    end
+  end
 
   -- Redraw clock (10 fps)
   redraw_clock = clock.run(function()
